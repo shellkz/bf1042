@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { z } from "zod";
 import { openapi } from "@elysiajs/openapi";
 import { cors } from "@elysia/cors";
 import { existsSync } from "node:fs";
@@ -23,6 +24,16 @@ import {
 } from "./shared/route-schemas.ts";
 import { createStore } from "./store/index.ts";
 import { auth, getCurrentUser } from "./auth/better-auth.ts";
+import {
+  requireAnyRole,
+  requireRole,
+  hasAnyRole,
+} from "./shared/guards.ts";
+import { db } from "./db/client.ts";
+import { user as userTable } from "./db/auth-schema.ts";
+import { roleRequestsTable } from "./db/schema.ts";
+import { eq, and } from "drizzle-orm";
+import { roleSchema } from "./shared/contracts.ts";
 
 // 從環境變量獲取配置
 const port = parseInt(process.env.PORT || "3000", 10);
@@ -150,7 +161,9 @@ app.get("/api/menu", () => ({ data: [...store.getMenu()] }), {
 
 app.post(
   "/api/menu",
-  async ({ body, set }) => {
+  async ({ body, set, request }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["owner", "admin"]);
     const newMenuItem = await store.createMenuItem(body);
     set.status = 201;
     return { data: newMenuItem };
@@ -170,7 +183,9 @@ app.post(
 
 app.patch(
   "/api/menu/:id",
-  async ({ params, body, set }) => {
+  async ({ params, body, set, request }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["owner", "admin"]);
     const menuId = parseInt(params.id);
     const menuItem = await store.updateMenuItem(menuId, body);
 
@@ -198,7 +213,9 @@ app.patch(
 
 app.delete(
   "/api/menu/:id",
-  async ({ params, set }) => {
+  async ({ params, set, request }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["owner", "admin"]);
     const menuId = parseInt(params.id);
     const removedMenuItem = await store.deleteMenuItem(menuId);
 
@@ -223,20 +240,28 @@ app.delete(
   },
 );
 
-// 訂單列表路由
+// 訂單列表路由（依角色分流）
 app.get(
   "/api/orders",
-  () => ({
-    data: store.getOrders().map(toOrderResponse),
-  }),
+  async ({ request }) => {
+    const user = await requireUser(request);
+    if (hasAnyRole(user, ["admin", "owner", "chef", "staff"])) {
+      return { data: store.getOrders().map(toOrderResponse) };
+    }
+    return {
+      data: store.getOrderHistoryByUserId(user.id).map(toOrderResponse),
+    };
+  },
   {
     detail: {
       tags: ["orders"],
-      summary: "List all orders",
-      description: "Return all orders stored in the demo backend.",
+      summary: "List orders (filtered by role)",
+      description:
+        "staff+ see all orders; customer sees only their own submitted orders.",
     },
     response: {
       200: orderListResponseSchema,
+      401: apiErrorResponseSchema,
     },
   },
 );
@@ -460,6 +485,187 @@ app.post(
       409: apiErrorResponseSchema,
       500: apiErrorResponseSchema,
     },
+  },
+);
+
+// ─── 角色申請 ──────────────────────────────────────────────────────────────────
+app.post(
+  "/api/users/me/role-request",
+  async ({ request, body, set }) => {
+    const user = await requireUser(request);
+
+    const [existing] = await db
+      .select()
+      .from(roleRequestsTable)
+      .where(
+        and(
+          eq(roleRequestsTable.userId, user.id),
+          eq(roleRequestsTable.status, "pending"),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      set.status = 409;
+      return { error: "Already has a pending role request" };
+    }
+
+    const [created] = await db
+      .insert(roleRequestsTable)
+      .values({
+        userId: user.id,
+        requestedRole: body.requestedRole,
+        reason: body.reason,
+      })
+      .returning();
+
+    set.status = 201;
+    return { data: created };
+  },
+  {
+    body: z.object({
+      requestedRole: z.enum(["staff", "chef"]),
+      reason: z.string().min(10),
+    }),
+    detail: { tags: ["roles"], summary: "Request a role upgrade" },
+  },
+);
+
+// ─── 查看所有角色申請（admin only）────────────────────────────────────────────
+app.get(
+  "/api/admin/role-requests",
+  async ({ request }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    const requests = await db.select().from(roleRequestsTable);
+    return { data: requests };
+  },
+  {
+    detail: { tags: ["roles"], summary: "List role requests (admin only)" },
+  },
+);
+
+// ─── 審核角色申請（admin only）────────────────────────────────────────────────
+app.patch(
+  "/api/admin/role-requests/:id",
+  async ({ request, params, body, set }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    const requestId = parseInt(params.id);
+    const [existing] = await db
+      .select()
+      .from(roleRequestsTable)
+      .where(eq(roleRequestsTable.id, requestId))
+      .limit(1);
+
+    if (!existing) {
+      set.status = 404;
+      return { error: "Role request not found" };
+    }
+
+    if (existing.status !== "pending") {
+      set.status = 400;
+      return { error: "This request has already been reviewed" };
+    }
+
+    const [updated] = await db
+      .update(roleRequestsTable)
+      .set({
+        status: body.status,
+        reviewedBy: user.id,
+        reviewedAt: new Date(),
+        reviewNote: body.reviewNote,
+      })
+      .where(eq(roleRequestsTable.id, requestId))
+      .returning();
+
+    if (body.status === "approved") {
+      const [target] = await db
+        .select()
+        .from(userTable)
+        .where(eq(userTable.id, existing.userId))
+        .limit(1);
+
+      if (target) {
+        const newRoles = [...new Set([...target.roles, existing.requestedRole])];
+        await db
+          .update(userTable)
+          .set({ roles: newRoles })
+          .where(eq(userTable.id, existing.userId));
+      }
+    }
+
+    return { data: updated };
+  },
+  {
+    body: z.object({
+      status: z.enum(["approved", "rejected"]),
+      reviewNote: z.string().optional(),
+    }),
+    detail: { tags: ["roles"], summary: "Review role request (admin only)" },
+  },
+);
+
+// ─── 查看使用者列表（admin only）──────────────────────────────────────────────
+app.get(
+  "/api/users",
+  async ({ request }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    const users = await db
+      .select({
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+        roles: userTable.roles,
+        createdAt: userTable.createdAt,
+      })
+      .from(userTable);
+
+    return { data: users };
+  },
+  {
+    detail: { tags: ["roles"], summary: "List users (admin only)" },
+  },
+);
+
+// ─── 直接指派角色（admin only）────────────────────────────────────────────────
+app.patch(
+  "/api/admin/users/:userId/roles",
+  async ({ request, params, body, set }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    if (params.userId === user.id) {
+      set.status = 400;
+      return { error: "Cannot modify your own roles" };
+    }
+
+    const [target] = await db
+      .select()
+      .from(userTable)
+      .where(eq(userTable.id, params.userId))
+      .limit(1);
+
+    if (!target) {
+      set.status = 404;
+      return { error: "User not found" };
+    }
+
+    const [updated] = await db
+      .update(userTable)
+      .set({ roles: body.roles })
+      .where(eq(userTable.id, params.userId))
+      .returning();
+
+    return { data: { id: updated.id, email: updated.email, roles: updated.roles } };
+  },
+  {
+    body: z.object({ roles: z.array(roleSchema).min(1) }),
+    detail: { tags: ["roles"], summary: "Assign roles directly (admin only)" },
   },
 );
 

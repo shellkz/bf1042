@@ -68,9 +68,11 @@ export async function getCurrentUser(
   if (!session?.user) return null;
 
   // DbUser → SessionUser 轉換（延續 02_4 講義的分層原則）
+  const dbUser = session.user as typeof session.user & { roles?: string[] };
   return {
     id: session.user.id,
     email: session.user.email,
     name: session.user.name,
+    roles: (dbUser.roles ?? ["customer"]) as SessionUser["roles"],
   };
 }
