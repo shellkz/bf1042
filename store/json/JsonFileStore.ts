@@ -171,7 +171,12 @@ export class JsonFileStore implements Store {
             ...orderItem,
             item: normalizeMenuItem(orderItem.item),
           })),
-          status: order.status === "submitted" ? "submitted" : "pending",
+          status:
+            order.status === "submitted"
+              ? "submitted"
+              : order.status === "ready"
+                ? "ready"
+                : "pending",
           submittedAt:
             order.status === "submitted" ? order.submittedAt : undefined,
         })),
@@ -272,9 +277,7 @@ export class JsonFileStore implements Store {
 
   getOrderHistoryByUserId(userId: string): ReadonlyArray<Order> {
     return this.orders
-      .filter(
-        (order) => order.userId === userId && order.status === "submitted",
-      )
+      .filter((order) => order.userId === userId && order.status !== "pending")
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
@@ -396,6 +399,21 @@ export class JsonFileStore implements Store {
     order.submittedAt = new Date().toISOString();
     await this.persist();
 
+    return { ok: true, order };
+  }
+
+  async markOrderReady(
+    orderId: number,
+  ): Promise<
+    | { ok: true; order: Order }
+    | { ok: false; code: "ORDER_NOT_FOUND" | "ORDER_NOT_SUBMITTED" }
+  > {
+    const order = this.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, code: "ORDER_NOT_FOUND" };
+    if (order.status !== "submitted") return { ok: false, code: "ORDER_NOT_SUBMITTED" };
+
+    order.status = "ready";
+    await this.persist();
     return { ok: true, order };
   }
 

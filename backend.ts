@@ -488,6 +488,41 @@ app.post(
   },
 );
 
+// ─── 廚師標記出餐 ─────────────────────────────────────────────────────────────
+app.patch(
+  "/api/orders/:id/ready",
+  async ({ params, request, set }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["chef", "owner", "admin"]);
+
+    const orderId = parseInt(params.id, 10);
+    const result = await store.markOrderReady(orderId);
+
+    if (!result.ok && result.code === "ORDER_NOT_FOUND") {
+      set.status = 404;
+      return { error: "Order not found" };
+    }
+
+    if (!result.ok && result.code === "ORDER_NOT_SUBMITTED") {
+      set.status = 409;
+      return { error: "Order is not in submitted state" };
+    }
+
+    if (!result.ok) {
+      set.status = 500;
+      return { error: "Unexpected store state" };
+    }
+
+    return { data: toOrderResponse(result.order) };
+  },
+  {
+    detail: {
+      tags: ["orders"],
+      summary: "Mark order as ready (chef/owner/admin only)",
+    },
+  },
+);
+
 // ─── 顧客評分 ──────────────────────────────────────────────────────────────────
 app.post(
   "/api/orders/:id/rating",

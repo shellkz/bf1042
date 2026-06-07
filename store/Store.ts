@@ -12,6 +12,10 @@ export type SubmitOrderErrorCode =
   | "ORDER_NOT_EDITABLE"
   | "EMPTY_ORDER";
 
+export type MarkOrderReadyErrorCode =
+  | "ORDER_NOT_FOUND"
+  | "ORDER_NOT_SUBMITTED";
+
 export interface Store {
   init(): Promise<void>;
 
@@ -55,5 +59,10 @@ export interface Store {
     input: { userId: string },
   ): Promise<
     { ok: true; order: Order } | { ok: false; code: SubmitOrderErrorCode }
+  >;
+  markOrderReady(
+    orderId: number,
+  ): Promise<
+    { ok: true; order: Order } | { ok: false; code: MarkOrderReadyErrorCode }
   >;
 }

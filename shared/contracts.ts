@@ -65,7 +65,7 @@ export const orderSchema = z.object({
   userId: z.string().min(1),
   items: z.array(orderItemSchema),
   total: z.number().min(0),
-  status: z.enum(["pending", "submitted"]),
+  status: z.enum(["pending", "submitted", "ready"]),
   createdAt: z.string().min(1),
   submittedAt: z.string().min(1).optional(),
 });

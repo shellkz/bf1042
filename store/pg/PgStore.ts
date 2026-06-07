@@ -170,7 +170,7 @@ export class PgStore implements Store {
 
   getOrderHistoryByUserId(userId: string): ReadonlyArray<Order> {
     return this.orders
-      .filter((o) => o.userId === userId && o.status === "submitted")
+      .filter((o) => o.userId === userId && o.status !== "pending")
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
@@ -319,6 +319,25 @@ export class PgStore implements Store {
     return { ok: true, order };
   }
 
+  async markOrderReady(
+    orderId: number,
+  ): Promise<
+    | { ok: true; order: Order }
+    | { ok: false; code: "ORDER_NOT_FOUND" | "ORDER_NOT_SUBMITTED" }
+  > {
+    const order = this.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, code: "ORDER_NOT_FOUND" };
+    if (order.status !== "submitted") return { ok: false, code: "ORDER_NOT_SUBMITTED" };
+
+    await db
+      .update(ordersTable)
+      .set({ status: "ready" })
+      .where(eq(ordersTable.id, orderId));
+
+    order.status = "ready";
+    return { ok: true, order };
+  }
+
   // ── Private ─────────────────────────────────────────────────
 
   private async seedFromJsonIfEmpty(): Promise<void> {
@@ -405,7 +424,12 @@ export class PgStore implements Store {
       userId: row.userId,
       items: itemsByOrderId.get(row.id) ?? [],
       total: row.total,
-      status: row.status === "submitted" ? "submitted" : "pending",
+      status:
+        row.status === "submitted"
+          ? "submitted"
+          : row.status === "ready"
+            ? "ready"
+            : "pending",
       createdAt:
         row.createdAt instanceof Date
           ? row.createdAt.toISOString()

@@ -35,6 +35,9 @@ export default function App() {
 
   type RatingState = { stars: number; comment: string; submitted: boolean; error: string };
   const [ratingByOrderId, setRatingByOrderId] = useState<Record<number, RatingState>>({});
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const [allOrdersLoading, setAllOrdersLoading] = useState(false);
+  const [markReadyError, setMarkReadyError] = useState("");
 
   function syncCartFromOrder(order: Order) {
     const nextQtyByItemId = order.items.reduce(
@@ -94,6 +97,36 @@ export default function App() {
       setHistoryOrders(Array.isArray(payload?.data) ? payload.data : []);
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  async function loadAllOrders(): Promise<void> {
+    setAllOrdersLoading(true);
+    try {
+      const res = await fetch(buildApiUrl("/api/orders"), { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = (await res.json()) as ApiDataResponse<Order[]>;
+      setAllOrders(Array.isArray(payload?.data) ? payload.data : []);
+    } finally {
+      setAllOrdersLoading(false);
+    }
+  }
+
+  async function markOrderReady(orderId: number): Promise<void> {
+    setMarkReadyError("");
+    try {
+      const res = await fetch(buildApiUrl(`/api/orders/${orderId}/ready`), {
+        method: "PATCH",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setMarkReadyError(body.error ?? `標記失敗（HTTP ${res.status}）`);
+        return;
+      }
+      await loadAllOrders();
+    } catch {
+      setMarkReadyError("網路錯誤，請稍後再試");
     }
   }
 
@@ -166,6 +199,10 @@ export default function App() {
       setActionError("載入使用者訂單資料失敗，請稍後再試。");
       console.error(refreshError);
     });
+
+    if (user.roles.includes("chef") || user.roles.includes("owner") || user.roles.includes("admin")) {
+      void loadAllOrders().catch(console.error);
+    }
   }, [user]);
 
   const grouped = useMemo(() => {
@@ -670,6 +707,52 @@ export default function App() {
           ))
         )}
 
+        {user && (user.roles.includes("chef") || user.roles.includes("owner") || user.roles.includes("admin")) ? (
+          <section className="mt-10">
+            <h2 className="text-2xl font-bold mb-4">廚師面板 — 待出餐訂單</h2>
+            {markReadyError ? (
+              <div className="alert alert-error mb-3"><span>{markReadyError}</span></div>
+            ) : null}
+            {allOrdersLoading ? (
+              <div className="alert"><span>讀取中...</span></div>
+            ) : (() => {
+              const submittedOrders = allOrders.filter((o) => o.status === "submitted");
+              if (submittedOrders.length === 0) {
+                return <div className="alert alert-info"><span>目前沒有等待出餐的訂單。</span></div>;
+              }
+              return (
+                <div className="space-y-3">
+                  {submittedOrders.map((order) => (
+                    <article key={order.id} className="card bg-base-100 shadow-sm border border-warning">
+                      <div className="card-body p-4">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <h3 className="font-semibold">訂單 #{order.id}</h3>
+                          <span className="badge badge-warning">備餐中</span>
+                        </div>
+                        <p className="text-sm opacity-70">送出時間：{order.submittedAt ?? order.createdAt}</p>
+                        <ul className="text-sm list-disc pl-5 space-y-1">
+                          {order.items.map((detail) => (
+                            <li key={`chef-${order.id}-${detail.item.id}`}>
+                              {detail.item.name} x {detail.qty}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="font-bold text-right">總額 ${order.total}</p>
+                        <button
+                          className="btn btn-sm btn-success w-full mt-2"
+                          onClick={() => { void markOrderReady(order.id); }}
+                        >
+                          標記出餐
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              );
+            })()}
+          </section>
+        ) : null}
+
         {user ? (
           <section className="mt-10">
             <h2 className="text-2xl font-bold mb-4">我的訂單歷史</h2>
@@ -691,7 +774,11 @@ export default function App() {
                     <div className="card-body p-4">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <h3 className="font-semibold">訂單 #{order.id}</h3>
-                        <span className="badge badge-success">已送出</span>
+                        {order.status === "ready" ? (
+                          <span className="badge badge-info">出餐完成</span>
+                        ) : (
+                          <span className="badge badge-warning">備餐中</span>
+                        )}
                       </div>
                       <p className="text-sm opacity-70">
                         建立時間：{order.createdAt}
