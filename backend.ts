@@ -528,7 +528,6 @@ app.post(
   "/api/orders/:id/rating",
   async ({ params, body, request, set }) => {
     const user = await requireUser(request);
-    requireRole(user, "customer");
 
     const orderId = parseInt(params.id, 10);
     const order = store.getOrderById(orderId);
