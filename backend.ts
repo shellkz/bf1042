@@ -825,6 +825,46 @@ app.patch(
   },
 );
 
+// ─── 依 email 指派角色（admin only）──────────────────────────────────────────
+app.patch(
+  "/api/admin/users/by-email/roles",
+  async ({ request, body, set }) => {
+    const user = await requireUser(request);
+    requireRole(user, "admin");
+
+    const [target] = await db
+      .select()
+      .from(userTable)
+      .where(eq(userTable.email, body.email))
+      .limit(1);
+
+    if (!target) {
+      set.status = 404;
+      return { error: "找不到此 Email 的使用者（對方需先登入過一次）" };
+    }
+
+    if (target.id === user.id) {
+      set.status = 400;
+      return { error: "Cannot modify your own roles" };
+    }
+
+    const [updated] = await db
+      .update(userTable)
+      .set({ roles: body.roles })
+      .where(eq(userTable.id, target.id))
+      .returning();
+
+    return { data: { id: updated.id, email: updated.email, roles: updated.roles } };
+  },
+  {
+    body: z.object({
+      email: z.string().email(),
+      roles: z.array(roleSchema).min(1),
+    }),
+    detail: { tags: ["roles"], summary: "Assign roles by email (admin only)" },
+  },
+);
+
 // ─── 當前登入使用者（含 roles）────────────────────────────────────────────────
 app.get("/api/me", async ({ request, set }) => {
   const user = await getCurrentUser(request);

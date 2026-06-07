@@ -44,6 +44,11 @@ export default function App() {
   const [allOrdersLoading, setAllOrdersLoading] = useState(false);
   const [markReadyError, setMarkReadyError] = useState("");
   const [callOrderError, setCallOrderError] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminRoles, setAdminRoles] = useState<string[]>(["customer"]);
+  const [adminRoleLoading, setAdminRoleLoading] = useState(false);
+  const [adminRoleError, setAdminRoleError] = useState("");
+  const [adminRoleSuccess, setAdminRoleSuccess] = useState("");
 
   // 有員工角色且無 admin：只顯示工作面板，隱藏菜單/購物車/訂單歷史
   const isWorkerOnly =
@@ -177,6 +182,33 @@ export default function App() {
       await loadAllOrders();
     } catch {
       setCallOrderError("網路錯誤，請稍後再試");
+    }
+  }
+
+  async function assignRoleByEmail(): Promise<void> {
+    setAdminRoleError("");
+    setAdminRoleSuccess("");
+    if (!adminEmail || adminRoles.length === 0) return;
+    setAdminRoleLoading(true);
+    try {
+      const res = await fetch(buildApiUrl("/api/admin/users/by-email/roles"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: adminEmail, roles: adminRoles }),
+      });
+      const data = (await res.json()) as { data?: { email: string; roles: string[] }; error?: string };
+      if (!res.ok) {
+        setAdminRoleError(data.error ?? `失敗（HTTP ${res.status}）`);
+        return;
+      }
+      setAdminRoleSuccess(`已將 ${data.data?.email} 的角色設為：${data.data?.roles.join(", ")}`);
+      setAdminEmail("");
+      setAdminRoles(["customer"]);
+    } catch {
+      setAdminRoleError("網路錯誤，請稍後再試");
+    } finally {
+      setAdminRoleLoading(false);
     }
   }
 
@@ -944,6 +976,65 @@ export default function App() {
                 )}
               </div>
             ) : null}
+          </section>
+        ) : null}
+
+        {user && user.roles.includes("admin") ? (
+          <section className="mt-10">
+            <h2 className="text-2xl font-bold mb-4">管理員面板 — 角色指派</h2>
+            <div className="card bg-base-100 shadow-sm max-w-md">
+              <div className="card-body">
+                <div className="form-control mb-3">
+                  <label className="label">
+                    <span className="label-text">使用者 Email</span>
+                  </label>
+                  <input
+                    type="email"
+                    className="input input-bordered"
+                    placeholder="user@example.com"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                  />
+                </div>
+                <div className="form-control mb-4">
+                  <label className="label">
+                    <span className="label-text">角色（可多選）</span>
+                  </label>
+                  <div className="flex flex-wrap gap-4">
+                    {(["customer", "staff", "chef", "owner", "admin"] as const).map((role) => (
+                      <label key={role} className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-sm"
+                          checked={adminRoles.includes(role)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAdminRoles((prev) => [...prev, role]);
+                            } else {
+                              setAdminRoles((prev) => prev.filter((r) => r !== role));
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{role}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {adminRoleError ? (
+                  <div className="alert alert-error mb-2"><span>{adminRoleError}</span></div>
+                ) : null}
+                {adminRoleSuccess ? (
+                  <div className="alert alert-success mb-2"><span>{adminRoleSuccess}</span></div>
+                ) : null}
+                <button
+                  className="btn btn-primary w-full"
+                  disabled={!adminEmail || adminRoles.length === 0 || adminRoleLoading}
+                  onClick={() => { void assignRoleByEmail(); }}
+                >
+                  {adminRoleLoading ? "指派中..." : "指派角色"}
+                </button>
+              </div>
+            </div>
           </section>
         ) : null}
 
