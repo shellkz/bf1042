@@ -176,7 +176,9 @@ export class JsonFileStore implements Store {
               ? "submitted"
               : order.status === "ready"
                 ? "ready"
-                : "pending",
+                : order.status === "called"
+                  ? "called"
+                  : "pending",
           submittedAt:
             order.status === "submitted" ? order.submittedAt : undefined,
         })),
@@ -413,6 +415,21 @@ export class JsonFileStore implements Store {
     if (order.status !== "submitted") return { ok: false, code: "ORDER_NOT_SUBMITTED" };
 
     order.status = "ready";
+    await this.persist();
+    return { ok: true, order };
+  }
+
+  async markOrderCalled(
+    orderId: number,
+  ): Promise<
+    | { ok: true; order: Order }
+    | { ok: false; code: "ORDER_NOT_FOUND" | "ORDER_NOT_READY" }
+  > {
+    const order = this.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, code: "ORDER_NOT_FOUND" };
+    if (order.status !== "ready") return { ok: false, code: "ORDER_NOT_READY" };
+
+    order.status = "called";
     await this.persist();
     return { ok: true, order };
   }

@@ -523,6 +523,41 @@ app.patch(
   },
 );
 
+// ─── 店員叫號 ─────────────────────────────────────────────────────────────────
+app.patch(
+  "/api/orders/:id/call",
+  async ({ params, request, set }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["staff", "owner", "admin"]);
+
+    const orderId = parseInt(params.id, 10);
+    const result = await store.markOrderCalled(orderId);
+
+    if (!result.ok && result.code === "ORDER_NOT_FOUND") {
+      set.status = 404;
+      return { error: "Order not found" };
+    }
+
+    if (!result.ok && result.code === "ORDER_NOT_READY") {
+      set.status = 409;
+      return { error: "Order is not in ready state" };
+    }
+
+    if (!result.ok) {
+      set.status = 500;
+      return { error: "Unexpected store state" };
+    }
+
+    return { data: toOrderResponse(result.order) };
+  },
+  {
+    detail: {
+      tags: ["orders"],
+      summary: "Call order number (staff/owner/admin only)",
+    },
+  },
+);
+
 // ─── 查詢單筆訂單評分 ─────────────────────────────────────────────────────────
 app.get(
   "/api/orders/:id/rating",

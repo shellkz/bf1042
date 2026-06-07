@@ -338,6 +338,25 @@ export class PgStore implements Store {
     return { ok: true, order };
   }
 
+  async markOrderCalled(
+    orderId: number,
+  ): Promise<
+    | { ok: true; order: Order }
+    | { ok: false; code: "ORDER_NOT_FOUND" | "ORDER_NOT_READY" }
+  > {
+    const order = this.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, code: "ORDER_NOT_FOUND" };
+    if (order.status !== "ready") return { ok: false, code: "ORDER_NOT_READY" };
+
+    await db
+      .update(ordersTable)
+      .set({ status: "called" })
+      .where(eq(ordersTable.id, orderId));
+
+    order.status = "called";
+    return { ok: true, order };
+  }
+
   // ── Private ─────────────────────────────────────────────────
 
   private async seedFromJsonIfEmpty(): Promise<void> {
@@ -429,7 +448,9 @@ export class PgStore implements Store {
           ? "submitted"
           : row.status === "ready"
             ? "ready"
-            : "pending",
+            : row.status === "called"
+              ? "called"
+              : "pending",
       createdAt:
         row.createdAt instanceof Date
           ? row.createdAt.toISOString()

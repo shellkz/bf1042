@@ -38,6 +38,7 @@ export default function App() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [allOrdersLoading, setAllOrdersLoading] = useState(false);
   const [markReadyError, setMarkReadyError] = useState("");
+  const [callOrderError, setCallOrderError] = useState("");
 
   function syncCartFromOrder(order: Order) {
     const nextQtyByItemId = order.items.reduce(
@@ -130,6 +131,24 @@ export default function App() {
       setAllOrders(Array.isArray(payload?.data) ? payload.data : []);
     } finally {
       setAllOrdersLoading(false);
+    }
+  }
+
+  async function callOrder(orderId: number): Promise<void> {
+    setCallOrderError("");
+    try {
+      const res = await fetch(buildApiUrl(`/api/orders/${orderId}/call`), {
+        method: "PATCH",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setCallOrderError(body.error ?? `叫號失敗（HTTP ${res.status}）`);
+        return;
+      }
+      await loadAllOrders();
+    } catch {
+      setCallOrderError("網路錯誤，請稍後再試");
     }
   }
 
@@ -774,6 +793,52 @@ export default function App() {
           </section>
         ) : null}
 
+        {user && (user.roles.includes("staff") || user.roles.includes("owner") || user.roles.includes("admin")) ? (
+          <section className="mt-10">
+            <h2 className="text-2xl font-bold mb-4">店員面板 — 待叫號訂單</h2>
+            {callOrderError ? (
+              <div className="alert alert-error mb-3"><span>{callOrderError}</span></div>
+            ) : null}
+            {allOrdersLoading ? (
+              <div className="alert"><span>讀取中...</span></div>
+            ) : (() => {
+              const readyOrders = allOrders.filter((o) => o.status === "ready");
+              if (readyOrders.length === 0) {
+                return <div className="alert alert-info"><span>目前沒有待叫號的訂單。</span></div>;
+              }
+              return (
+                <div className="space-y-3">
+                  {readyOrders.map((order) => (
+                    <article key={order.id} className="card bg-base-100 shadow-sm border border-info">
+                      <div className="card-body p-4">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <h3 className="font-semibold">訂單 #{order.id}</h3>
+                          <span className="badge badge-info">備餐完成</span>
+                        </div>
+                        <p className="text-sm opacity-70">送出時間：{order.submittedAt ?? order.createdAt}</p>
+                        <ul className="text-sm list-disc pl-5 space-y-1">
+                          {order.items.map((detail) => (
+                            <li key={`staff-${order.id}-${detail.item.id}`}>
+                              {detail.item.name} x {detail.qty}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="font-bold text-right">總額 ${order.total}</p>
+                        <button
+                          className="btn btn-sm btn-info w-full mt-2"
+                          onClick={() => { void callOrder(order.id); }}
+                        >
+                          叫號
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              );
+            })()}
+          </section>
+        ) : null}
+
         {user ? (
           <section className="mt-10">
             <h2 className="text-2xl font-bold mb-4">我的訂單歷史</h2>
@@ -795,8 +860,10 @@ export default function App() {
                     <div className="card-body p-4">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <h3 className="font-semibold">訂單 #{order.id}</h3>
-                        {order.status === "ready" ? (
-                          <span className="badge badge-info">出餐完成</span>
+                        {order.status === "called" ? (
+                          <span className="badge badge-success">可取餐</span>
+                        ) : order.status === "ready" ? (
+                          <span className="badge badge-info">備餐完成</span>
                         ) : (
                           <span className="badge badge-warning">備餐中</span>
                         )}
