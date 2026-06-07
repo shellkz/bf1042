@@ -55,15 +55,26 @@ async function main() {
       )
     `);
 
-    // 建立應用 schema（若不存在）
-    const pgSchema = process.env.PG_SCHEMA ?? "public";
-    if (pgSchema !== "public") {
-      console.log(`[setup] Creating schema "${pgSchema}" if not exists...`);
-      await client.query(`CREATE SCHEMA IF NOT EXISTS "${pgSchema}"`);
-    }
-
     const journalText = await readFile(JOURNAL_PATH, "utf-8");
     const journal = JSON.parse(journalText) as Journal;
+
+    // 建立所有 migration 檔案中出現的 schema（若不存在）
+    const allSqlFiles = journal.entries.map((e) =>
+      join(DRIZZLE_DIR, `${e.tag}.sql`)
+    );
+    const schemaNames = new Set<string>();
+    for (const sqlPath of allSqlFiles) {
+      const text = await readFile(sqlPath, "utf-8");
+      for (const m of text.matchAll(/"([^"]+)"\./g)) {
+        schemaNames.add(m[1]!);
+      }
+    }
+    for (const schema of schemaNames) {
+      if (schema !== "public") {
+        console.log(`[setup] Creating schema "${schema}" if not exists...`);
+        await client.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+      }
+    }
 
     for (const entry of journal.entries) {
       const sqlPath = join(DRIZZLE_DIR, `${entry.tag}.sql`);
@@ -84,16 +95,20 @@ async function main() {
       for (let i = 0; i < statements.length; i++) {
         const stmt = statements[i]!;
         console.log(`  [${i + 1}/${statements.length}] executing...`);
+        await client.query(`SAVEPOINT sp_${i}`);
         try {
           await client.query(stmt);
+          await client.query(`RELEASE SAVEPOINT sp_${i}`);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          // 若表/schema 已存在則繼續，其他錯誤則中止
+          // 若表/schema 已存在則 rollback 到 savepoint 繼續，其他錯誤則中止整個 transaction
           if (
             msg.includes("already exists") ||
             msg.includes("duplicate_table")
           ) {
             console.warn(`  [skip] already exists: ${msg.split("\n")[0]}`);
+            await client.query(`ROLLBACK TO SAVEPOINT sp_${i}`);
+            await client.query(`RELEASE SAVEPOINT sp_${i}`);
           } else {
             console.error(`  [error] ${msg}`);
             await client.query("ROLLBACK");

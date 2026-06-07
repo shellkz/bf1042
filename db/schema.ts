@@ -47,6 +47,32 @@ export const ordersTable = appSchema.table("orders", {
   submittedAt: timestamp("submitted_at", { withTimezone: true }),
 });
 
+export const ratingsTable = appSchema.table("ratings", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  orderId: integer("order_id")
+    .notNull()
+    .unique()
+    .references(() => ordersTable.id),
+  userId: text("user_id").notNull().references(() => user.id),
+  stars: integer("stars").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const roleRequestsTable = appSchema.table("role_requests", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  requestedRole: text("requested_role").notNull(),
+  reason: text("reason").notNull(),
+  status: text("status").notNull().default("pending"),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  reviewedBy: text("reviewed_by").references(() => user.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+});
+
 export const orderItemsTable = appSchema.table(
   "order_items",
   {

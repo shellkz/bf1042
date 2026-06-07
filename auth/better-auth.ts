@@ -3,7 +3,6 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db/client.ts";
 import * as schema from "../db/auth-schema.ts";
 import type { SessionUser } from "../shared/contracts.ts";
-import { toSessionUser } from "./user-mapper.ts";
 
 // ─── Startup guard ────────────────────────────────────────────────────────────
 // BETTER_AUTH_SECRET 必須在啟動時存在且不為佔位值，
@@ -68,6 +67,12 @@ export async function getCurrentUser(
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return null;
 
-  // DbUser → SessionUser 轉換（延續 contracts.ts 分層原則）
-  return toSessionUser(session.user);
+  // DbUser → SessionUser 轉換（延續 02_4 講義的分層原則）
+  const dbUser = session.user as typeof session.user & { roles?: string[] };
+  return {
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+    roles: (dbUser.roles ?? ["customer"]) as SessionUser["roles"],
+  };
 }
