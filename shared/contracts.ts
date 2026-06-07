@@ -30,6 +30,17 @@ export const sessionUserSchema = z.object({
   roles: z.array(roleSchema).min(1),
 });
 
+export const ratingSchema = z.object({
+  id: z.number(),
+  orderId: z.number(),
+  userId: z.string(),
+  stars: z.number().int().min(1).max(5),
+  comment: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export type Rating = z.infer<typeof ratingSchema>;
+
 export const roleRequestSchema = z.object({
   id: z.number(),
   userId: z.string(),

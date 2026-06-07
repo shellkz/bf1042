@@ -31,7 +31,7 @@ import {
 } from "./shared/guards.ts";
 import { db } from "./db/client.ts";
 import { user as userTable } from "./db/auth-schema.ts";
-import { roleRequestsTable } from "./db/schema.ts";
+import { roleRequestsTable, ratingsTable } from "./db/schema.ts";
 import { eq, and } from "drizzle-orm";
 import { roleSchema } from "./shared/contracts.ts";
 
@@ -485,6 +485,64 @@ app.post(
       409: apiErrorResponseSchema,
       500: apiErrorResponseSchema,
     },
+  },
+);
+
+// ─── 顧客評分 ──────────────────────────────────────────────────────────────────
+app.post(
+  "/api/orders/:id/rating",
+  async ({ params, body, request, set }) => {
+    const user = await requireUser(request);
+    requireRole(user, "customer");
+
+    const orderId = parseInt(params.id, 10);
+    const order = store.getOrderById(orderId);
+
+    if (!order) {
+      set.status = 404;
+      return { error: "Order not found" };
+    }
+
+    if (order.userId !== user.id) {
+      set.status = 403;
+      return { error: "Forbidden" };
+    }
+
+    if (order.status === "pending") {
+      set.status = 400;
+      return { error: "Cannot rate a pending order" };
+    }
+
+    const [existing] = await db
+      .select()
+      .from(ratingsTable)
+      .where(eq(ratingsTable.orderId, orderId))
+      .limit(1);
+
+    if (existing) {
+      set.status = 409;
+      return { error: "Order already rated" };
+    }
+
+    const [created] = await db
+      .insert(ratingsTable)
+      .values({
+        orderId,
+        userId: user.id,
+        stars: body.stars,
+        comment: body.comment,
+      })
+      .returning();
+
+    set.status = 201;
+    return { data: created };
+  },
+  {
+    body: z.object({
+      stars: z.number().int().min(1).max(5),
+      comment: z.string().optional(),
+    }),
+    detail: { tags: ["orders"], summary: "Rate a submitted order (customer only)" },
   },
 );
 

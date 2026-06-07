@@ -33,6 +33,9 @@ export default function App() {
   const [isClearingCart, setIsClearingCart] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
+  type RatingState = { stars: number; comment: string; submitted: boolean; error: string };
+  const [ratingByOrderId, setRatingByOrderId] = useState<Record<number, RatingState>>({});
+
   function syncCartFromOrder(order: Order) {
     const nextQtyByItemId = order.items.reduce(
       (acc, orderItem) => {
@@ -478,6 +481,46 @@ export default function App() {
     }
   }
 
+  async function submitRating(orderId: number): Promise<void> {
+    const state = ratingByOrderId[orderId];
+    if (!state || state.stars === 0) return;
+
+    try {
+      const res = await fetch(buildApiUrl(`/api/orders/${orderId}/rating`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ stars: state.stars, comment: state.comment || undefined }),
+      });
+
+      if (res.status === 409) {
+        setRatingByOrderId((prev) => ({
+          ...prev,
+          [orderId]: { ...state, error: "此訂單已評分", submitted: true },
+        }));
+        return;
+      }
+
+      if (!res.ok) {
+        setRatingByOrderId((prev) => ({
+          ...prev,
+          [orderId]: { ...state, error: "評分失敗，請稍後再試" },
+        }));
+        return;
+      }
+
+      setRatingByOrderId((prev) => ({
+        ...prev,
+        [orderId]: { ...state, submitted: true, error: "" },
+      }));
+    } catch {
+      setRatingByOrderId((prev) => ({
+        ...prev,
+        [orderId]: { ...state, error: "網路錯誤，請稍後再試" },
+      }));
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -663,6 +706,59 @@ export default function App() {
                       <p className="font-bold text-right">
                         總額 ${order.total}
                       </p>
+
+                      {order.status !== "pending" && (() => {
+                        const rs = ratingByOrderId[order.id];
+                        if (rs?.submitted) {
+                          return (
+                            <div className="mt-2 text-sm text-success">
+                              {rs.error ? rs.error : `已評分：${"★".repeat(rs.stars)}${"☆".repeat(5 - rs.stars)}`}
+                            </div>
+                          );
+                        }
+                        const stars = rs?.stars ?? 0;
+                        return (
+                          <div className="mt-3 border-t border-base-300 pt-2">
+                            <p className="text-sm font-semibold mb-1">評分此訂單</p>
+                            <div className="flex gap-1 mb-2">
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <button
+                                  key={n}
+                                  className={`text-xl ${n <= stars ? "text-warning" : "text-base-300"}`}
+                                  onClick={() =>
+                                    setRatingByOrderId((prev) => ({
+                                      ...prev,
+                                      [order.id]: { stars: n, comment: prev[order.id]?.comment ?? "", submitted: false, error: "" },
+                                    }))
+                                  }
+                                >
+                                  ★
+                                </button>
+                              ))}
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="留言（選填）"
+                              className="input input-bordered input-sm w-full mb-2"
+                              value={rs?.comment ?? ""}
+                              onChange={(e) =>
+                                setRatingByOrderId((prev) => ({
+                                  ...prev,
+                                  [order.id]: { stars: prev[order.id]?.stars ?? 0, comment: e.target.value, submitted: false, error: "" },
+                                }))
+                              }
+                            />
+                            {rs?.error && <p className="text-error text-xs mb-1">{rs.error}</p>}
+                            <button
+                              className="btn btn-sm btn-primary w-full"
+                              disabled={stars === 0}
+                              onClick={() => { void submitRating(order.id); }}
+                            >
+                              送出評分
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </article>
                 ))}
