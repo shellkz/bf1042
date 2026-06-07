@@ -45,6 +45,14 @@ export default function App() {
   const [markReadyError, setMarkReadyError] = useState("");
   const [callOrderError, setCallOrderError] = useState("");
 
+  // 有員工角色且無 admin：只顯示工作面板，隱藏菜單/購物車/訂單歷史
+  const isWorkerOnly =
+    user !== null &&
+    !user.roles.includes("admin") &&
+    (user.roles.includes("chef") ||
+      user.roles.includes("staff") ||
+      user.roles.includes("owner"));
+
   function syncCartFromOrder(order: Order) {
     const nextQtyByItemId = order.items.reduce(
       (acc, orderItem) => {
@@ -255,10 +263,18 @@ export default function App() {
       return;
     }
 
-    void refreshUserOrders().catch((refreshError) => {
-      setActionError("載入使用者訂單資料失敗，請稍後再試。");
-      console.error(refreshError);
-    });
+    const workerOnly =
+      !user.roles.includes("admin") &&
+      (user.roles.includes("chef") ||
+        user.roles.includes("staff") ||
+        user.roles.includes("owner"));
+
+    if (!workerOnly) {
+      void refreshUserOrders().catch((refreshError) => {
+        setActionError("載入使用者訂單資料失敗，請稍後再試。");
+        console.error(refreshError);
+      });
+    }
 
     if (user.roles.includes("chef") || user.roles.includes("staff") || user.roles.includes("owner") || user.roles.includes("admin")) {
       void loadAllOrders().catch(console.error);
@@ -647,22 +663,31 @@ export default function App() {
             <div className="badge badge-outline">
               {user ? `已登入 ${user.name}` : "尚未登入"}
             </div>
-            <div className="badge badge-primary">
-              {items.length} 個品項・{grouped.categories.length} 類
-            </div>
-            <div className="badge badge-secondary">
-              購物車 {cartItemCount} 件
-            </div>
-            <div className="badge badge-accent">總計 ${cartTotal}</div>
-            <button
-              className="btn btn-sm btn-outline"
-              onClick={() => {
-                setIsCartOpen(true);
-              }}
-              disabled={!user}
-            >
-              購物車明細
-            </button>
+            {user ? (
+              <div className="badge badge-neutral">
+                {user.roles.join(" / ")}
+              </div>
+            ) : null}
+            {!isWorkerOnly ? (
+              <>
+                <div className="badge badge-primary">
+                  {items.length} 個品項・{grouped.categories.length} 類
+                </div>
+                <div className="badge badge-secondary">
+                  購物車 {cartItemCount} 件
+                </div>
+                <div className="badge badge-accent">總計 ${cartTotal}</div>
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => {
+                    setIsCartOpen(true);
+                  }}
+                  disabled={!user}
+                >
+                  購物車明細
+                </button>
+              </>
+            ) : null}
             {user ? (
               <button
                 className="btn btn-sm"
@@ -709,11 +734,13 @@ export default function App() {
           </div>
         ) : null}
 
-        {items.length === 0 ? (
+        {!isWorkerOnly && items.length === 0 ? (
           <div className="alert alert-info">
             <span>目前沒有菜單資料</span>
           </div>
-        ) : (
+        ) : null}
+
+        {!isWorkerOnly && items.length > 0 ? (
           grouped.categories.map((category) => (
             <div key={category} className="mb-8">
               <h2 className="text-3xl font-bold mb-4 text-primary border-b-2 border-primary pb-2">
@@ -765,7 +792,7 @@ export default function App() {
               </div>
             </div>
           ))
-        )}
+        ) : null}
 
         {user && (user.roles.includes("chef") || user.roles.includes("owner") || user.roles.includes("admin")) ? (
           <section className="mt-10">
@@ -920,7 +947,7 @@ export default function App() {
           </section>
         ) : null}
 
-        {user ? (
+        {user && !isWorkerOnly ? (
           <section className="mt-10">
             <h2 className="text-2xl font-bold mb-4">我的訂單歷史</h2>
             {historyLoading ? (
