@@ -655,7 +655,7 @@ export default function App() {
       <div className="navbar bg-base-100 shadow-lg flex-col items-stretch gap-2 md:flex-row md:items-center">
         <div className="flex-1 w-full md:w-auto">
           <a className="btn btn-ghost normal-case text-2xl">
-            🌅 聯大資工早餐菜單
+            🌅 U1224054 王淯霆
           </a>
         </div>
         <div className="flex-none w-full md:w-auto">
