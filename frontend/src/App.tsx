@@ -35,6 +35,11 @@ export default function App() {
 
   type RatingState = { stars: number; comment: string; submitted: boolean; error: string };
   const [ratingByOrderId, setRatingByOrderId] = useState<Record<number, RatingState>>({});
+  type DailyReport = { date: string; totalOrders: number; totalRevenue: number; topItems: { name: string; totalQty: number; totalRevenue: number }[] };
+  const [report, setReport] = useState<DailyReport | null>(null);
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [allOrdersLoading, setAllOrdersLoading] = useState(false);
   const [markReadyError, setMarkReadyError] = useState("");
@@ -119,6 +124,21 @@ export default function App() {
       setRatingByOrderId(preloaded);
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  async function fetchReport(date: string): Promise<void> {
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const res = await fetch(buildApiUrl(`/api/reports/daily?date=${date}`), { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { data: DailyReport };
+      setReport(data.data);
+    } catch {
+      setReportError("報表載入失敗，請稍後再試");
+    } finally {
+      setReportLoading(false);
     }
   }
 
@@ -836,6 +856,67 @@ export default function App() {
                 </div>
               );
             })()}
+          </section>
+        ) : null}
+
+        {user && (user.roles.includes("owner") || user.roles.includes("admin")) ? (
+          <section className="mt-10">
+            <h2 className="text-2xl font-bold mb-4">店長面板 — 每日報表</h2>
+            <div className="flex gap-2 mb-4 items-center">
+              <input
+                type="date"
+                className="input input-bordered input-sm"
+                value={reportDate}
+                onChange={(e) => setReportDate(e.target.value)}
+              />
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => { void fetchReport(reportDate); }}
+                disabled={reportLoading}
+              >
+                {reportLoading ? "查詢中..." : "查詢"}
+              </button>
+            </div>
+            {reportError ? <div className="alert alert-error mb-3"><span>{reportError}</span></div> : null}
+            {report ? (
+              <div className="space-y-4">
+                <div className="stats shadow w-full">
+                  <div className="stat">
+                    <div className="stat-title">總訂單數</div>
+                    <div className="stat-value text-primary">{report.totalOrders}</div>
+                    <div className="stat-desc">{report.date}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title">總營業額</div>
+                    <div className="stat-value text-success">${report.totalRevenue}</div>
+                    <div className="stat-desc">元</div>
+                  </div>
+                </div>
+                {report.topItems.length > 0 ? (
+                  <div className="card bg-base-100 shadow-sm">
+                    <div className="card-body p-4">
+                      <h3 className="font-semibold mb-2">Top 5 熱賣品項</h3>
+                      <table className="table table-sm">
+                        <thead>
+                          <tr><th>品項</th><th className="text-right">數量</th><th className="text-right">小計</th></tr>
+                        </thead>
+                        <tbody>
+                          {report.topItems.map((item, i) => (
+                            <tr key={i}>
+                              <td>{item.name}</td>
+                              <td className="text-right">{item.totalQty}</td>
+                              <td className="text-right">${item.totalRevenue}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="alert alert-info"><span>當日無訂單資料。</span></div>
+                )}
+              </div>
+            ) : null}
           </section>
         ) : null}
 

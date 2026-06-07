@@ -31,8 +31,8 @@ import {
 } from "./shared/guards.ts";
 import { db } from "./db/client.ts";
 import { user as userTable } from "./db/auth-schema.ts";
-import { roleRequestsTable, ratingsTable } from "./db/schema.ts";
-import { eq, and } from "drizzle-orm";
+import { roleRequestsTable, ratingsTable, ordersTable, orderItemsTable } from "./db/schema.ts";
+import { eq, and, gte, lte, ne, sql, desc } from "drizzle-orm";
 import { roleSchema } from "./shared/contracts.ts";
 
 // 從環境變量獲取配置
@@ -834,6 +834,64 @@ app.get("/api/me", async ({ request, set }) => {
   }
   return { data: user };
 });
+
+// ─── 店長每日報表 ─────────────────────────────────────────────────────────────
+app.get(
+  "/api/reports/daily",
+  async ({ query, request }) => {
+    const user = await requireUser(request);
+    requireAnyRole(user, ["owner", "admin"]);
+
+    const dateStr = (query as Record<string, string>).date ?? new Date().toISOString().slice(0, 10);
+    const startOfDay = new Date(`${dateStr}T00:00:00.000Z`);
+    const endOfDay = new Date(`${dateStr}T23:59:59.999Z`);
+
+    const [summary] = await db
+      .select({
+        totalOrders: sql<number>`cast(count(*) as int)`,
+        totalRevenue: sql<number>`coalesce(cast(sum(${ordersTable.total}) as int), 0)`,
+      })
+      .from(ordersTable)
+      .where(
+        and(
+          gte(ordersTable.submittedAt, startOfDay),
+          lte(ordersTable.submittedAt, endOfDay),
+          ne(ordersTable.status, "pending"),
+        ),
+      );
+
+    const topItems = await db
+      .select({
+        name: orderItemsTable.name,
+        totalQty: sql<number>`cast(sum(${orderItemsTable.qty}) as int)`,
+        totalRevenue: sql<number>`cast(sum(${orderItemsTable.price} * ${orderItemsTable.qty}) as int)`,
+      })
+      .from(orderItemsTable)
+      .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+      .where(
+        and(
+          gte(ordersTable.submittedAt, startOfDay),
+          lte(ordersTable.submittedAt, endOfDay),
+          ne(ordersTable.status, "pending"),
+        ),
+      )
+      .groupBy(orderItemsTable.name)
+      .orderBy(desc(sql`sum(${orderItemsTable.qty})`))
+      .limit(5);
+
+    return {
+      data: {
+        date: dateStr,
+        totalOrders: summary?.totalOrders ?? 0,
+        totalRevenue: summary?.totalRevenue ?? 0,
+        topItems,
+      },
+    };
+  },
+  {
+    detail: { tags: ["reports"], summary: "Daily report (owner/admin only)" },
+  },
+);
 
 // 健康檢查路由
 app.get("/health", () => ({ status: "ok" }), {
