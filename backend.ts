@@ -606,9 +606,9 @@ app.post(
       return { error: "Forbidden" };
     }
 
-    if (order.status === "pending") {
+    if (order.status !== "called") {
       set.status = 400;
-      return { error: "Cannot rate a pending order" };
+      return { error: "Can only rate after order is called" };
     }
 
     const [existing] = await db

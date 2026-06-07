@@ -882,7 +882,7 @@ export default function App() {
                         總額 ${order.total}
                       </p>
 
-                      {order.status !== "pending" && (() => {
+                      {order.status === "called" && (() => {
                         const rs = ratingByOrderId[order.id];
                         if (rs?.submitted) {
                           return (
