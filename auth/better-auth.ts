@@ -1,7 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq } from "drizzle-orm";
 import { db } from "../db/client.ts";
 import * as schema from "../db/auth-schema.ts";
+import { user as userTable } from "../db/auth-schema.ts";
 import type { SessionUser } from "../shared/contracts.ts";
 
 // ─── Startup guard ────────────────────────────────────────────────────────────
@@ -67,12 +69,19 @@ export async function getCurrentUser(
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return null;
 
-  // DbUser → SessionUser 轉換（延續 02_4 講義的分層原則）
-  const dbUser = session.user as typeof session.user & { roles?: string[] };
+  // Better Auth 不保證回傳自訂欄位（roles），直接 query DB 確保正確
+  const [row] = await db
+    .select({ roles: userTable.roles })
+    .from(userTable)
+    .where(eq(userTable.id, session.user.id))
+    .limit(1);
+
   return {
     id: session.user.id,
     email: session.user.email,
     name: session.user.name,
-    roles: (dbUser.roles ?? ["customer"]) as SessionUser["roles"],
+    roles: ((row?.roles?.length ?? 0) > 0
+      ? row!.roles
+      : ["customer"]) as SessionUser["roles"],
   };
 }
