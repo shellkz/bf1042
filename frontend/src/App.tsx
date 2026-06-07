@@ -94,7 +94,28 @@ export default function App() {
       }
 
       const payload = (await response.json()) as ApiDataResponse<Order[]>;
-      setHistoryOrders(Array.isArray(payload?.data) ? payload.data : []);
+      const orders = Array.isArray(payload?.data) ? payload.data : [];
+      setHistoryOrders(orders);
+
+      // 載入每筆訂單的已存評分
+      const results = await Promise.allSettled(
+        orders.map(async (order) => {
+          const res = await fetch(buildApiUrl(`/api/orders/${order.id}/rating`), {
+            credentials: "include",
+          });
+          if (!res.ok) return null;
+          const data = (await res.json()) as { data?: { stars: number; comment?: string | null } | null };
+          return data?.data ? { orderId: order.id, stars: data.data.stars, comment: data.data.comment ?? "" } : null;
+        }),
+      );
+
+      const preloaded: Record<number, RatingState> = {};
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) {
+          preloaded[r.value.orderId] = { stars: r.value.stars, comment: r.value.comment, submitted: true, error: "" };
+        }
+      }
+      setRatingByOrderId(preloaded);
     } finally {
       setHistoryLoading(false);
     }

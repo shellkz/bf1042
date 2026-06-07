@@ -523,6 +523,35 @@ app.patch(
   },
 );
 
+// ─── 查詢單筆訂單評分 ─────────────────────────────────────────────────────────
+app.get(
+  "/api/orders/:id/rating",
+  async ({ params, request, set }) => {
+    const user = await requireUser(request);
+    const orderId = parseInt(params.id, 10);
+    const order = store.getOrderById(orderId);
+
+    if (!order) {
+      set.status = 404;
+      return { error: "Order not found" };
+    }
+
+    if (order.userId !== user.id) {
+      set.status = 403;
+      return { error: "Forbidden" };
+    }
+
+    const [rating] = await db
+      .select()
+      .from(ratingsTable)
+      .where(eq(ratingsTable.orderId, orderId))
+      .limit(1);
+
+    return { data: rating ?? null };
+  },
+  { detail: { tags: ["orders"], summary: "Get rating for an order" } },
+);
+
 // ─── 顧客評分 ──────────────────────────────────────────────────────────────────
 app.post(
   "/api/orders/:id/rating",
