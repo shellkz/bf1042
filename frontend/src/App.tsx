@@ -140,20 +140,13 @@ export default function App() {
     // V9: 從 Better Auth session cookie 恢復登入狀態（不再用 localStorage）
     async function restoreSession() {
       try {
-        const res = await fetch(buildApiUrl("/api/auth/get-session"), {
+        const res = await fetch(buildApiUrl("/api/me"), {
           credentials: "include",
         });
         if (res.ok) {
-          const data = (await res.json()) as { user?: Partial<SessionUser> & { roles?: string[] } } | null;
-          if (data?.user?.id && mounted) {
-            setUser({
-              id: data.user.id,
-              email: data.user.email ?? "",
-              name: data.user.name ?? "",
-              roles: (Array.isArray(data.user.roles) && data.user.roles.length > 0
-                ? data.user.roles
-                : ["customer"]) as SessionUser["roles"],
-            });
+          const data = (await res.json()) as { data?: SessionUser } | null;
+          if (data?.data && mounted) {
+            setUser(data.data);
           }
         }
       } catch {

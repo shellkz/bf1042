@@ -762,6 +762,16 @@ app.patch(
   },
 );
 
+// ─── 當前登入使用者（含 roles）────────────────────────────────────────────────
+app.get("/api/me", async ({ request, set }) => {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    set.status = 401;
+    return { error: "Unauthorized" };
+  }
+  return { data: user };
+});
+
 // 健康檢查路由
 app.get("/health", () => ({ status: "ok" }), {
   detail: {
