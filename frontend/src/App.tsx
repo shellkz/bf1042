@@ -240,7 +240,7 @@ export default function App() {
       console.error(refreshError);
     });
 
-    if (user.roles.includes("chef") || user.roles.includes("owner") || user.roles.includes("admin")) {
+    if (user.roles.includes("chef") || user.roles.includes("staff") || user.roles.includes("owner") || user.roles.includes("admin")) {
       void loadAllOrders().catch(console.error);
     }
   }, [user]);
