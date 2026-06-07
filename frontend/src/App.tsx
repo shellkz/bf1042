@@ -144,9 +144,16 @@ export default function App() {
           credentials: "include",
         });
         if (res.ok) {
-          const data = (await res.json()) as { user?: SessionUser } | null;
-          if (data?.user && mounted) {
-            setUser(data.user);
+          const data = (await res.json()) as { user?: Partial<SessionUser> & { roles?: string[] } } | null;
+          if (data?.user?.id && mounted) {
+            setUser({
+              id: data.user.id,
+              email: data.user.email ?? "",
+              name: data.user.name ?? "",
+              roles: (Array.isArray(data.user.roles) && data.user.roles.length > 0
+                ? data.user.roles
+                : ["customer"]) as SessionUser["roles"],
+            });
           }
         }
       } catch {
