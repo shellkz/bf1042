@@ -86,6 +86,7 @@ export const submitOrderParamsSchema = z.object({
 
 export const menuListResponseSchema = z.object({
   data: z.array(menuItemSchema),
+  version: z.number().int(),
 });
 
 export const menuItemResponseSchema = z.object({

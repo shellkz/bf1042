@@ -131,6 +131,7 @@ export class JsonFileStore implements Store {
   private userIdCounter = 0;
   private menuIdCounter = 0;
   private orderIdCounter = 0;
+  private menuVersion = 1;
   private persistQueue: Promise<void> = Promise.resolve();
 
   constructor(options: JsonFileStoreOptions) {
@@ -198,6 +199,10 @@ export class JsonFileStore implements Store {
     return this.menu;
   }
 
+  getMenuVersion(): number {
+    return this.menuVersion;
+  }
+
   async createMenuItem(input: {
     name: string;
     price: number;
@@ -215,6 +220,7 @@ export class JsonFileStore implements Store {
     };
 
     this.menu.push(newMenuItem);
+    this.menuVersion++;
     await this.persist();
 
     return newMenuItem;
@@ -241,6 +247,7 @@ export class JsonFileStore implements Store {
     menuItem.description = patch.description ?? menuItem.description;
     menuItem.image_url = patch.image_url ?? menuItem.image_url;
 
+    this.menuVersion++;
     await this.persist();
 
     return menuItem;
@@ -253,6 +260,7 @@ export class JsonFileStore implements Store {
     }
 
     const [removedMenuItem] = this.menu.splice(targetIndex, 1);
+    this.menuVersion++;
     await this.persist();
 
     return removedMenuItem ?? null;

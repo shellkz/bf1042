@@ -148,7 +148,7 @@ app.post("/api/sign-out", async ({ request }) => {
 });
 
 // 菜單路由
-app.get("/api/menu", () => ({ data: [...store.getMenu()] }), {
+app.get("/api/menu", () => ({ data: [...store.getMenu()], version: store.getMenuVersion() }), {
   detail: {
     tags: ["menu"],
     summary: "List menu items",

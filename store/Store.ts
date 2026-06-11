@@ -24,6 +24,7 @@ export interface Store {
   init(): Promise<void>;
 
   getMenu(): ReadonlyArray<MenuItem>;
+  getMenuVersion(): number;
   createMenuItem(input: {
     name: string;
     price: number;

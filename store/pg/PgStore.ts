@@ -3,6 +3,7 @@ import type { MenuItem, Order, OrderItem } from "../../shared/contracts.ts";
 import { db } from "../../db/client.ts";
 import {
   menuItemsTable,
+  menuMetaTable,
   orderItemsTable,
   ordersTable,
 } from "../../db/schema.ts";
@@ -34,6 +35,7 @@ function calculateTotal(items: ReadonlyArray<OrderItem>): number {
 export class PgStore implements Store {
   private readonly dataFilePath: string;
   private menu: MenuItem[] = [];
+  private menuVersion = 1;
   private orders: Order[] = [];
 
   constructor(options: PgStoreOptions = {}) {
@@ -50,6 +52,10 @@ export class PgStore implements Store {
 
   getMenu(): ReadonlyArray<MenuItem> {
     return this.menu;
+  }
+
+  getMenuVersion(): number {
+    return this.menuVersion;
   }
 
   async createMenuItem(input: {
@@ -82,6 +88,7 @@ export class PgStore implements Store {
     };
 
     this.menu.push(created);
+    await this.bumpMenuVersion();
     return created;
   }
 
@@ -123,6 +130,7 @@ export class PgStore implements Store {
     const idx = this.menu.findIndex((item) => item.id === menuId);
     if (idx !== -1) this.menu[idx] = next;
 
+    await this.bumpMenuVersion();
     return next;
   }
 
@@ -146,6 +154,7 @@ export class PgStore implements Store {
     const idx = this.menu.findIndex((item) => item.id === menuId);
     if (idx !== -1) this.menu.splice(idx, 1);
 
+    await this.bumpMenuVersion();
     return removedItem;
   }
 
@@ -359,7 +368,20 @@ export class PgStore implements Store {
 
   // ── Private ─────────────────────────────────────────────────
 
+  private async bumpMenuVersion(): Promise<void> {
+    await db
+      .update(menuMetaTable)
+      .set({ version: sql`${menuMetaTable.version} + 1` })
+      .where(eq(menuMetaTable.id, 1));
+    this.menuVersion += 1;
+  }
+
   private async seedFromJsonIfEmpty(): Promise<void> {
+    await db
+      .insert(menuMetaTable)
+      .values({ id: 1, version: 1 })
+      .onConflictDoNothing();
+
     const [countRow] = await db
       .select({ value: sql<number>`count(*)` })
       .from(menuItemsTable);
@@ -397,6 +419,9 @@ export class PgStore implements Store {
   }
 
   private async reloadFromDatabase(): Promise<void> {
+    const [metaRow] = await db.select().from(menuMetaTable).where(eq(menuMetaTable.id, 1));
+    this.menuVersion = metaRow?.version ?? 1;
+
     const menuRows = await db
       .select()
       .from(menuItemsTable)
