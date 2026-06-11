@@ -187,6 +187,9 @@ app.patch(
     const user = await requireUser(request);
     requireAnyRole(user, ["owner", "admin"]);
     const menuId = parseInt(params.id);
+    if (body.reason) {
+      console.log(`[menu] ${user.email} 修改品項 #${menuId}：${body.reason}`);
+    }
     const menuItem = await store.updateMenuItem(menuId, body);
 
     if (!menuItem) {

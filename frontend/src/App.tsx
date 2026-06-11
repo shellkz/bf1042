@@ -50,6 +50,13 @@ export default function App() {
   const [adminRoleError, setAdminRoleError] = useState("");
   const [adminRoleSuccess, setAdminRoleSuccess] = useState("");
 
+  // 菜單管理（owner / admin）
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [menuEditForm, setMenuEditForm] = useState({ name: "", price: "", category: "", description: "", image_url: "", reason: "" });
+  const [menuEditLoading, setMenuEditLoading] = useState(false);
+  const [menuEditError, setMenuEditError] = useState("");
+  const [menuEditSuccess, setMenuEditSuccess] = useState("");
+
   // 有員工角色且無 admin：只顯示工作面板，隱藏菜單/購物車/訂單歷史
   const isWorkerOnly =
     user !== null &&
@@ -227,6 +234,49 @@ export default function App() {
       await loadAllOrders();
     } catch {
       setMarkReadyError("網路錯誤，請稍後再試");
+    }
+  }
+
+  function startEditItem(item: MenuItem) {
+    setEditingItemId(item.id);
+    setMenuEditForm({ name: item.name, price: String(item.price), category: item.category, description: item.description, image_url: item.image_url, reason: "" });
+    setMenuEditError("");
+    setMenuEditSuccess("");
+  }
+
+  async function submitMenuEdit(): Promise<void> {
+    if (editingItemId === null || !menuEditForm.reason.trim()) return;
+    setMenuEditLoading(true);
+    setMenuEditError("");
+    setMenuEditSuccess("");
+    try {
+      const res = await fetch(buildApiUrl(`/api/menu/${editingItemId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: menuEditForm.name || undefined,
+          price: menuEditForm.price !== "" ? Number(menuEditForm.price) : undefined,
+          category: menuEditForm.category || undefined,
+          description: menuEditForm.description || undefined,
+          image_url: menuEditForm.image_url || undefined,
+          reason: menuEditForm.reason,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { data?: MenuItem; error?: string };
+      if (!res.ok) {
+        setMenuEditError(data.error ?? `失敗（HTTP ${res.status}）`);
+        return;
+      }
+      setMenuEditSuccess("更新成功");
+      setEditingItemId(null);
+      const menuRes = await fetch(buildApiUrl("/api/menu"));
+      const payload = (await menuRes.json()) as { data: MenuItem[] };
+      setItems(Array.isArray(payload?.data) ? payload.data : []);
+    } catch {
+      setMenuEditError("網路錯誤，請稍後再試");
+    } finally {
+      setMenuEditLoading(false);
     }
   }
 
@@ -1034,6 +1084,82 @@ export default function App() {
                   {adminRoleLoading ? "指派中..." : "指派角色"}
                 </button>
               </div>
+            </div>
+          </section>
+        ) : null}
+
+        {user && (user.roles.includes("owner") || user.roles.includes("admin")) ? (
+          <section className="mt-10">
+            <h2 className="text-2xl font-bold mb-4">菜單管理</h2>
+            {menuEditSuccess ? (
+              <div className="alert alert-success mb-3"><span>{menuEditSuccess}</span></div>
+            ) : null}
+            <div className="space-y-2">
+              {items.map((item) => (
+                <article key={item.id} className="card bg-base-100 shadow-sm border border-base-300">
+                  <div className="card-body p-4">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="font-semibold">{item.name}</span>
+                        <span className="text-sm opacity-60 ml-2">#{item.id} · {item.category} · ${item.price}</span>
+                      </div>
+                      <button
+                        className="btn btn-xs btn-outline"
+                        onClick={() => { editingItemId === item.id ? setEditingItemId(null) : startEditItem(item); }}
+                      >
+                        {editingItemId === item.id ? "取消" : "編輯"}
+                      </button>
+                    </div>
+
+                    {editingItemId === item.id ? (
+                      <div className="mt-3 space-y-2 border-t border-base-300 pt-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div>
+                            <label className="label-text text-xs">名稱</label>
+                            <input className="input input-bordered input-sm w-full" value={menuEditForm.name}
+                              onChange={(e) => setMenuEditForm((f) => ({ ...f, name: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="label-text text-xs">價格</label>
+                            <input type="number" className="input input-bordered input-sm w-full" value={menuEditForm.price}
+                              onChange={(e) => setMenuEditForm((f) => ({ ...f, price: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="label-text text-xs">分類</label>
+                            <input className="input input-bordered input-sm w-full" value={menuEditForm.category}
+                              onChange={(e) => setMenuEditForm((f) => ({ ...f, category: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="label-text text-xs">圖片網址</label>
+                            <input className="input input-bordered input-sm w-full" value={menuEditForm.image_url}
+                              onChange={(e) => setMenuEditForm((f) => ({ ...f, image_url: e.target.value }))} />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="label-text text-xs">描述</label>
+                            <input className="input input-bordered input-sm w-full" value={menuEditForm.description}
+                              onChange={(e) => setMenuEditForm((f) => ({ ...f, description: e.target.value }))} />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="label-text text-xs font-semibold text-warning">修改原因（必填）</label>
+                            <input className="input input-bordered input-sm w-full" placeholder="例：促銷調整、成本變動..." value={menuEditForm.reason}
+                              onChange={(e) => setMenuEditForm((f) => ({ ...f, reason: e.target.value }))} />
+                          </div>
+                        </div>
+                        {menuEditError ? (
+                          <div className="alert alert-error py-1 text-sm"><span>{menuEditError}</span></div>
+                        ) : null}
+                        <button
+                          className="btn btn-sm btn-primary w-full"
+                          disabled={!menuEditForm.reason.trim() || menuEditLoading}
+                          onClick={() => { void submitMenuEdit(); }}
+                        >
+                          {menuEditLoading ? "儲存中..." : "儲存變更"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
             </div>
           </section>
         ) : null}

@@ -55,6 +55,7 @@ export const updateMenuItemBodySchema = z.object({
   category: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   image_url: z.string().min(1).optional(),
+  reason: z.string().optional(),
 });
 
 /** DELETE /api/menu/:id */
